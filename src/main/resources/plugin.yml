@@ -1,0 +1,14 @@
+name: GeminiCraft
+main: dev.geminicraft.GeminiCraft
+version: 1.0
+api-version: '1.21'
+commands:
+  gemini:
+    description: Gemini API interaction.
+    usage: /<command> <enable|disable|ask>
+    permission: geminicraft.use
+permissions:
+  geminicraft.use:
+    default: true
+  geminicraft.admin:
+    default: op
