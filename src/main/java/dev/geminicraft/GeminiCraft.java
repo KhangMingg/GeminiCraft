@@ -17,7 +17,7 @@ public class GeminiCraft extends JavaPlugin {
     private boolean askEnabled = true;
     private String apiKey = "";
     private String model = "";
-    private int maximumToken = 250;
+    private int maximumToken = 1000;
     private int cooldownSeconds = 5;
     private OkHttpClient httpClient;
     private Gson gson;
@@ -48,7 +48,7 @@ public class GeminiCraft extends JavaPlugin {
         if (model == null || model.isEmpty()) {
             model = "gemini-2.5-flash-preview-05-20";
         }
-        maximumToken = getConfig().getInt("maximum-token", 250);
+        maximumToken = getConfig().getInt("maximum-token", 1000); // Changed default from 250 to 1000
         cooldownSeconds = getConfig().getInt("cooldown-seconds", 5);
         String askStatus = getConfig().getString("enable-plugin", "enable");
         askEnabled = askStatus.equalsIgnoreCase("enable");
@@ -306,7 +306,7 @@ public class GeminiCraft extends JavaPlugin {
                 }
                 String answer = extractGeminiFullAnswer(responseBody);
                 if (answer == null || answer.trim().isEmpty()) {
-                    answer = "&cNo answer received from Gemini API.";
+                    answer = "&cOver token limited";
                 }
                 logGemini(logPrompt);
                 for (String l : answer.split("\n")) {

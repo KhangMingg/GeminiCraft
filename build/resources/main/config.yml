@@ -7,8 +7,8 @@ api-key: "000000000000000000000"
 # Gemini model to use (leave blank for default: gemini-2.5-flash-preview-05-20)
 gemini-model: ""
 
-# Maximum Gemini token output per ask (default: 250, 1 english word = 1-3 token)
-maximum-token: 250
+# Maximum Gemini token output per ask (recommended setting much higher than expected to avoid gemini return nothing, i already have prompt to limit it built in)
+maximum-token: 1000
 
 # Cooldown in seconds before a player can use /gemini ask again (default: 5)
 cooldown-seconds: 5
