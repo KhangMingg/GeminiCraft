@@ -24,3 +24,6 @@ Thumbs.db
 
 # VSCode
 .vscode/
+
+#html
+*.html
