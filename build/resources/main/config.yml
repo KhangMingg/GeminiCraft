@@ -7,11 +7,14 @@ api-key: "000000000000000000000"
 # Gemini model to use (leave blank for default: gemini-2.5-flash-preview-05-20)
 gemini-model: ""
 
-# Maximum Gemini token output per ask (recommended setting much higher than expected to avoid gemini return nothing, i already have prompt to limit it built in)
+# Maximum Gemini token output per ask (default: 1000, 1 English word = 1-3 tokens)
 maximum-token: 1000
 
-# Cooldown in seconds before a player can use /gemini ask again (default: 5)
-cooldown-seconds: 5
+# Cooldown in seconds before a player can use /gemini ask again (default: 10)
+cooldown-seconds: 10
 
-#do not edit!
-config-version: 1.0
+# Maximum number of chat history lines saved per player (default 100)
+max-chat-history-saves: 100
+
+# do not edit!
+config-version: 1.1

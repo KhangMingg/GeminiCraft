@@ -9,6 +9,7 @@ import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import java.io.*;
+import java.nio.file.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -19,20 +20,30 @@ public class GeminiCraft extends JavaPlugin {
     private String model = "";
     private int maximumToken = 1000;
     private int cooldownSeconds = 5;
+    private int maxChatHistorySaves = 100;
     private OkHttpClient httpClient;
     private Gson gson;
     private File logFile;
     private Boolean apiValid = null;
     private Boolean modelValid = null;
-    private final Map<UUID, Long> cooldowns = new HashMap<>();
-    private final Set<UUID> hasWarnedAsk = new HashSet<>();
+    private final Map<String, Long> cooldowns = new HashMap<>();
+    private final Set<String> hasWarnedAsk = new HashSet<>();
+    private final Set<String> busySenders = new HashSet<>();
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        String pluginVersion = getDescription().getVersion();
+        String pluginVersion = "1.1";
         String configVersion = getConfig().getString("config-version", null);
         File configFile = new File(getDataFolder(), "config.yml");
+        String savedApiKey = null;
+        if (configFile.exists()) {
+            try (InputStream in = new FileInputStream(configFile)) {
+                org.bukkit.configuration.file.YamlConfiguration oldConfig = new org.bukkit.configuration.file.YamlConfiguration();
+                oldConfig.load(new InputStreamReader(in));
+                savedApiKey = oldConfig.getString("api-key", null);
+            } catch (Exception ignored) {}
+        }
         if (configVersion == null || !configVersion.equals(pluginVersion)) {
             if (configFile.exists()) {
                 File backup = new File(getDataFolder(), "config-old-" + System.currentTimeMillis() + ".yml");
@@ -41,6 +52,10 @@ public class GeminiCraft extends JavaPlugin {
             }
             saveResource("config.yml", true);
             reloadConfig();
+            if (savedApiKey != null && !savedApiKey.isEmpty()) {
+                getConfig().set("api-key", savedApiKey);
+                saveConfig();
+            }
             getLogger().warning("Generated new config.yml with correct version (" + pluginVersion + ")");
         }
         apiKey = getConfig().getString("api-key", "");
@@ -48,8 +63,9 @@ public class GeminiCraft extends JavaPlugin {
         if (model == null || model.isEmpty()) {
             model = "gemini-2.5-flash-preview-05-20";
         }
-        maximumToken = getConfig().getInt("maximum-token", 1000); // Changed default from 250 to 1000
+        maximumToken = getConfig().getInt("maximum-token", 1000);
         cooldownSeconds = getConfig().getInt("cooldown-seconds", 5);
+        maxChatHistorySaves = getConfig().getInt("max-chat-history-saves", 100);
         String askStatus = getConfig().getString("enable-plugin", "enable");
         askEnabled = askStatus.equalsIgnoreCase("enable");
         httpClient = new OkHttpClient.Builder()
@@ -71,7 +87,15 @@ public class GeminiCraft extends JavaPlugin {
     }
 
     @Override
-    public void onDisable() {}
+    public void onDisable() {
+        if (httpClient != null) {
+            httpClient.dispatcher().executorService().shutdown();
+            httpClient.connectionPool().evictAll();
+            if (httpClient.cache() != null) {
+                try { httpClient.cache().close(); } catch (IOException ignored) {}
+            }
+        }
+    }
 
     private String asciiWarning() {
         return "\n" +
@@ -84,27 +108,27 @@ public class GeminiCraft extends JavaPlugin {
     }
 
     private void sendInfoPanel(CommandSender sender) {
-        String line = "&7&m----------------------------------------------------";
+        String line = "§7§m----------------------------------------------------";
         sender.sendMessage(color(line));
-        sender.sendMessage(color("&b&lGeminiCraft"));
-        sender.sendMessage(color("&f"));
-        String apiStatus = apiValid == null ? "&eChecking..." : (apiValid ? "&aValid" : "&cInvalid");
-        String modelStatus = modelValid == null ? "&eChecking..." : (modelValid ? "&aValid" : "&cInvalid");
-        sender.sendMessage(color("&fAPI verify: " + apiStatus));
-        sender.sendMessage(color("&fModel verify: " + modelStatus));
-        sender.sendMessage(color("&fGemini model: &b" + model));
-        sender.sendMessage(color("&fMaximum token: &b" + maximumToken));
-        sender.sendMessage(color("&fCooldown: &b" + cooldownSeconds + "s"));
-        sender.sendMessage(color("&fEnabled: " + (askEnabled ? "&aTrue" : "&cFalse")));
-        sender.sendMessage(color("&f"));
+        sender.sendMessage(color("§b§lGeminiCraft v1.1"));
+        sender.sendMessage(color("§f"));
+        String apiStatus = apiValid == null ? "§eChecking..." : (apiValid ? "§aValid" : "§cInvalid");
+        String modelStatus = modelValid == null ? "§eChecking..." : (modelValid ? "§aValid" : "§cInvalid");
+        sender.sendMessage(color("§fAPI verify: " + apiStatus));
+        sender.sendMessage(color("§fModel verify: " + modelStatus));
+        sender.sendMessage(color("§fGemini model: §b" + model));
+        sender.sendMessage(color("§fMaximum token: §b" + maximumToken));
+        sender.sendMessage(color("§fCooldown: §b" + cooldownSeconds + "s"));
+        sender.sendMessage(color("§fEnabled: " + (askEnabled ? "§aTrue" : "§cFalse")));
+        sender.sendMessage(color("§f"));
         sender.sendMessage(color("&fCommand usage: &b/gemini help"));
         sender.sendMessage(color(line));
     }
 
     private void sendHelpPanel(CommandSender sender) {
-        String line = "&7&m----------------------------------------------------";
+        String line = "§7§m----------------------------------------------------";
         sender.sendMessage(color(line));
-        sender.sendMessage(color("&b&lGeminiCraft usage:"));
+        sender.sendMessage(color("§b§lGeminiCraft usage:"));
         sender.sendMessage(color(""));
         sender.sendMessage(color("&bCommands:"));
         sender.sendMessage(color("&7- &f/gemini &7(show plugin info)"));
@@ -159,11 +183,13 @@ public class GeminiCraft extends JavaPlugin {
                     }
                     String prompt = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
                     prompt = prompt + " (Answer in 1–3 sentences only.)";
+                    String senderName;
                     if (sender instanceof Player) {
                         Player player = (Player) sender;
+                        senderName = player.getName().toLowerCase();
                         long now = System.currentTimeMillis();
-                        if (cooldowns.containsKey(player.getUniqueId())) {
-                            long last = cooldowns.get(player.getUniqueId());
+                        if (cooldowns.containsKey(senderName)) {
+                            long last = cooldowns.get(senderName);
                             long waitMs = cooldownSeconds * 1000L - (now - last);
                             if (waitMs > 0) {
                                 long waitSec = (waitMs + 999) / 1000;
@@ -171,20 +197,32 @@ public class GeminiCraft extends JavaPlugin {
                                 return true;
                             }
                         }
-                        if (!hasWarnedAsk.contains(player.getUniqueId())) {
-                            hasWarnedAsk.add(player.getUniqueId());
+                        if (busySenders.contains(senderName)) {
+                            sender.sendMessage(color("&7[&bGeminiCraft&7] &eYou already have a Gemini answer in progress. Please wait."));
+                            return true;
+                        }
+                        if (!hasWarnedAsk.contains(senderName)) {
+                            hasWarnedAsk.add(senderName);
                             player.sendMessage(color("&7[&bGeminiCraft&7] &6Warning: this plugin is intended for simple question like recipe asking, longer prompt like writing essay will likely be unfinished due to token limit"));
                             final String delayedPrompt = prompt;
                             Bukkit.getScheduler().runTaskLater(this, () -> {
-                                cooldowns.put(player.getUniqueId(), System.currentTimeMillis());
-                                askGeminiAsync(player, delayedPrompt, maximumToken);
+                                cooldowns.put(senderName, System.currentTimeMillis());
+                                busySenders.add(senderName);
+                                askGeminiAsync(player, delayedPrompt, maximumToken, senderName);
                             }, 60L);
                             return true;
                         }
-                        cooldowns.put(player.getUniqueId(), now);
-                        askGeminiAsync(sender, prompt, maximumToken);
+                        cooldowns.put(senderName, now);
+                        busySenders.add(senderName);
+                        askGeminiAsync(sender, prompt, maximumToken, senderName);
                     } else {
-                        askGeminiAsync(sender, prompt, 8192);
+                        senderName = "CONSOLE";
+                        if (busySenders.contains(senderName)) {
+                            sender.sendMessage(color("&7[&bGeminiCraft&7] &eYou already have a Gemini answer in progress. Please wait."));
+                            return true;
+                        }
+                        busySenders.add(senderName);
+                        askGeminiAsync(sender, prompt, 8192, senderName);
                     }
                     return true;
                 default:
@@ -250,21 +288,61 @@ public class GeminiCraft extends JavaPlugin {
         });
     }
 
-    private void askGeminiAsync(CommandSender sender, String prompt, int maxToken) {
+    private File getChatHistoryDir() {
+        File dir = new File(getDataFolder(), "PlayerChatHistory");
+        if (!dir.exists()) dir.mkdirs();
+        return dir;
+    }
+
+    private File getPlayerHistoryFile(String playerName) {
+        return new File(getChatHistoryDir(), playerName.toLowerCase() + ".txt");
+    }
+
+    private List<String> loadHistory(String playerName) {
+        File file = getPlayerHistoryFile(playerName);
+        if (!file.exists()) return new ArrayList<>();
+        try {
+            return new ArrayList<>(Files.readAllLines(file.toPath()));
+        } catch (IOException e) {
+            getLogger().warning("Could not load chat history for " + playerName + ": " + e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    private void saveHistory(String playerName, List<String> history) {
+        File file = getPlayerHistoryFile(playerName);
+        int maxLines = Math.max(1, maxChatHistorySaves);
+        List<String> limited = history.size() > maxLines
+            ? history.subList(history.size() - maxLines, history.size())
+            : history;
+        try {
+            Files.write(file.toPath(), limited, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException e) {
+            getLogger().warning("Could not save chat history for " + playerName + ": " + e.getMessage());
+        }
+    }
+
+    private void askGeminiAsync(CommandSender sender, String prompt, int maxToken, String playerName) {
         if (!(sender instanceof ConsoleCommandSender)) {
             int wordCount = prompt.trim().split("\\s+").length;
             if (prompt.length() > 500 || wordCount > 100) {
                 String prefix = "&7[&bGeminiCraft&7] ";
                 sender.sendMessage(color(prefix + "&cYour prompt may be too large. Try requesting a shorter answer."));
+                if (!playerName.equals("CONSOLE")) busySenders.remove(playerName);
                 return;
             }
         }
+        List<String> history = loadHistory(playerName);
+        StringBuilder contextBuilder = new StringBuilder();
+        for (String h : history) contextBuilder.append(h).append("\n");
+        contextBuilder.append("Player: ").append(prompt).append("\nGemini:");
+        String requestText = contextBuilder.toString();
         String url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
         String json = "{\n" +
                 "  \"contents\": [\n" +
                 "    {\n" +
                 "      \"parts\": [\n" +
-                "        { \"text\": \"" + escapeJson(prompt) + "\" }\n" +
+                "        { \"text\": \"" + escapeJson(requestText) + "\" }\n" +
                 "      ]\n" +
                 "    }\n" +
                 "  ],\n" +
@@ -288,6 +366,7 @@ public class GeminiCraft extends JavaPlugin {
                 logGemini("   > ERROR: " + err);
                 Bukkit.getScheduler().runTask(GeminiCraft.this, () -> {
                     sender.sendMessage(color(prefix + "&c" + err));
+                    busySenders.remove(playerName);
                 });
             }
             @Override
@@ -301,6 +380,7 @@ public class GeminiCraft extends JavaPlugin {
                     logGemini("   > ERROR: " + errorOut);
                     Bukkit.getScheduler().runTask(GeminiCraft.this, () -> {
                         sender.sendMessage(color(prefix + "&c" + errorOut));
+                        busySenders.remove(playerName);
                     });
                     return;
                 }
@@ -312,22 +392,19 @@ public class GeminiCraft extends JavaPlugin {
                 for (String l : answer.split("\n")) {
                     logGemini("   > " + l);
                 }
+                history.add("Player: " + prompt);
+                history.add("Gemini: " + answer);
+                saveHistory(playerName, history);
                 final String[] lines = answer.split("\n");
                 Bukkit.getScheduler().runTask(GeminiCraft.this, () -> {
                     String header = prefix + "&bGemini Response:";
-                    if (sender instanceof ConsoleCommandSender) {
-                        sender.sendMessage(color(header));
-                        for (String line : lines) {
-                            sender.sendMessage(line);
-                        }
-                    } else {
-                        sender.sendMessage(color(header));
-                        for (String line : lines) {
-                            for (String chunk : splitLongLine(line, 230)) {
-                                sender.sendMessage(color("&7" + chunk));
-                            }
+                    sender.sendMessage(color(header));
+                    for (String line : lines) {
+                        for (String chunk : splitLongLine(line, 230)) {
+                            sender.sendMessage(color("&7" + chunk));
                         }
                     }
+                    busySenders.remove(playerName);
                 });
             }
         });
@@ -347,11 +424,9 @@ public class GeminiCraft extends JavaPlugin {
             StringBuilder sb = new StringBuilder();
             for (JsonElement el : parts) {
                 JsonObject part = el.getAsJsonObject();
-                if (part.has("text")) {
-                    sb.append(part.get("text").getAsString()).append("\n");
-                }
+                if (part.has("text")) sb.append(part.get("text").getAsString());
             }
-            return sb.toString().trim();
+            return sb.toString();
         } catch (Exception e) {
             return null;
         }
@@ -362,47 +437,38 @@ public class GeminiCraft extends JavaPlugin {
             JsonObject obj = gson.fromJson(json, JsonObject.class);
             if (obj.has("error")) {
                 JsonObject error = obj.getAsJsonObject("error");
-                if (error.has("message")) {
-                    return error.get("message").getAsString();
-                }
+                if (error.has("message")) return error.get("message").getAsString();
             }
-            return null;
-        } catch (Exception e) {
-            return null;
-        }
+        } catch (Exception ignored) { }
+        return null;
     }
 
     private void logGemini(String line) {
-        try (FileWriter fw = new FileWriter(logFile, true); BufferedWriter bw = new BufferedWriter(fw)) {
-            bw.write(line);
-            bw.newLine();
-        } catch (IOException e) {
-            getLogger().warning("Failed to write to GeminiCraft.log: " + e.getMessage());
-        }
+        try {
+            Files.write(logFile.toPath(), (line + "\n").getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException ignored) { }
     }
 
-    private String getTimeString(long ms) {
+    private String color(String msg) {
+        return msg.replace("&", "§");
+    }
+
+    private String getTimeString(long millis) {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-        return sdf.format(new Date(ms));
+        return sdf.format(new Date(millis));
     }
 
-    private String[] splitLongLine(String line, int max) {
-        if (line.length() <= max) return new String[]{line};
-        int parts = (int) Math.ceil((double) line.length() / max);
-        String[] arr = new String[parts];
-        for (int i = 0; i < parts; i++) {
-            int start = i * max;
-            int end = Math.min(line.length(), (i + 1) * max);
-            arr[i] = line.substring(start, end);
+    private List<String> splitLongLine(String input, int maxLen) {
+        List<String> out = new ArrayList<>();
+        while (input.length() > maxLen) {
+            out.add(input.substring(0, maxLen));
+            input = input.substring(maxLen);
         }
-        return arr;
+        if (!input.isEmpty()) out.add(input);
+        return out;
     }
 
     private String escapeJson(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
-    }
-
-    private String color(String s) {
-        return s.replaceAll("&([0-9a-fA-FklmnorKLMNOR])", "\u00A7$1");
+        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "");
     }
 }
