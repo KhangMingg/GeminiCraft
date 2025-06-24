@@ -17,4 +17,4 @@ cooldown-seconds: 10
 max-chat-history-saves: 100
 
 # do not edit!
-config-version: 1.1
+config-version: 1.1.1

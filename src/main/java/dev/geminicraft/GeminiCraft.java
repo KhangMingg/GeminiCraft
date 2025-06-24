@@ -33,7 +33,7 @@ public class GeminiCraft extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        String pluginVersion = "1.1";
+        String pluginVersion = "1.1.1";
         String configVersion = getConfig().getString("config-version", null);
         File configFile = new File(getDataFolder(), "config.yml");
         String savedApiKey = null;
@@ -61,7 +61,7 @@ public class GeminiCraft extends JavaPlugin {
         apiKey = getConfig().getString("api-key", "");
         model = getConfig().getString("gemini-model", "");
         if (model == null || model.isEmpty()) {
-            model = "gemini-2.5-flash-preview-05-20";
+            model = "gemini-2.5-flash";
         }
         maximumToken = getConfig().getInt("maximum-token", 1000);
         cooldownSeconds = getConfig().getInt("cooldown-seconds", 5);
