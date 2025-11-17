@@ -21,6 +21,7 @@ public class GeminiCraft extends JavaPlugin {
     private int maximumToken = 1000;
     private int cooldownSeconds = 5;
     private int maxChatHistorySaves = 100;
+    private String systemPrompt = "You are Gemini which is ported into a minecraft server using plugins, your goal is to help players inside the server. You should avoid answering more than 2-3 sentences.";
     private OkHttpClient httpClient;
     private Gson gson;
     private File logFile;
@@ -33,7 +34,7 @@ public class GeminiCraft extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        String pluginVersion = "1.1.1";
+        String pluginVersion = "1.2";
         String configVersion = getConfig().getString("config-version", null);
         File configFile = new File(getDataFolder(), "config.yml");
         String savedApiKey = null;
@@ -66,6 +67,10 @@ public class GeminiCraft extends JavaPlugin {
         maximumToken = getConfig().getInt("maximum-token", 1000);
         cooldownSeconds = getConfig().getInt("cooldown-seconds", 5);
         maxChatHistorySaves = getConfig().getInt("max-chat-history-saves", 100);
+        systemPrompt = getConfig().getString(
+                "prompt",
+                "You are Gemini which is ported into a minecraft server using plugins, your goal is to help players inside the server. You should avoid answering more than 2-3 sentences."
+        );
         String askStatus = getConfig().getString("enable-plugin", "enable");
         askEnabled = askStatus.equalsIgnoreCase("enable");
         httpClient = new OkHttpClient.Builder()
@@ -110,7 +115,7 @@ public class GeminiCraft extends JavaPlugin {
     private void sendInfoPanel(CommandSender sender) {
         String line = "§7§m----------------------------------------------------";
         sender.sendMessage(color(line));
-        sender.sendMessage(color("§b§lGeminiCraft v1.1"));
+        sender.sendMessage(color("§b§lGeminiCraft v1.2"));
         sender.sendMessage(color("§f"));
         String apiStatus = apiValid == null ? "§eChecking..." : (apiValid ? "§aValid" : "§cInvalid");
         String modelStatus = modelValid == null ? "§eChecking..." : (modelValid ? "§aValid" : "§cInvalid");
@@ -182,7 +187,6 @@ public class GeminiCraft extends JavaPlugin {
                         return true;
                     }
                     String prompt = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
-                    prompt = prompt + " (Answer in 1–3 sentences only.)";
                     String senderName;
                     if (sender instanceof Player) {
                         Player player = (Player) sender;
@@ -334,6 +338,7 @@ public class GeminiCraft extends JavaPlugin {
         }
         List<String> history = loadHistory(playerName);
         StringBuilder contextBuilder = new StringBuilder();
+        contextBuilder.append(systemPrompt).append("\n\n");
         for (String h : history) contextBuilder.append(h).append("\n");
         contextBuilder.append("Player: ").append(prompt).append("\nGemini:");
         String requestText = contextBuilder.toString();
