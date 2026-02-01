@@ -1,7 +1,7 @@
 name: GeminiCraft
-version: 2.0
+version: 2.0.1
 main: dev.geminicraft.GeminiCraft
-api-version: 1.21
+api-version: 1.18
 commands:
   gemini:
     description: GeminiCraft main command

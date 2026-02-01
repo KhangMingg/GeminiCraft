@@ -552,7 +552,7 @@ public class GeminiCraft extends JavaPlugin implements Listener {
         StringBuilder contextBuilder = new StringBuilder();
         contextBuilder.append(systemPrompt).append("\n\n");
         for (String h : history) contextBuilder.append(h).append("\n");
-        contextBuilder.append("Player: ").append(prompt).append("\nGemini:");
+        contextBuilder.append("Player: ").append(prompt).append("\nGeminiCraft:");
 
         String requestText = contextBuilder.toString();
         String url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
