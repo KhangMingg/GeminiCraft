@@ -1,34 +1,36 @@
 plugins {
-    id 'java'
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id "java"
+    id "com.github.johnrengelman.shadow" version "8.1.1"
 }
 
-group = 'dev.geminicraft'
-version = '1.2'
-
-sourceCompatibility = JavaVersion.VERSION_17
-targetCompatibility = JavaVersion.VERSION_17
+group = "dev.geminicraft"
+version = "2.0"
 
 repositories {
     mavenCentral()
-    maven { url 'https://repo.papermc.io/repository/maven-public/' }
+    maven { url "https://repo.papermc.io/repository/maven-public/" }
 }
 
 dependencies {
-    compileOnly 'io.papermc.paper:paper-api:1.20.2-R0.1-SNAPSHOT'
-    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
-    implementation 'com.google.code.gson:gson:2.10.1'
+    compileOnly "io.papermc.paper:paper-api:1.21-R0.1-SNAPSHOT"
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
+    implementation "com.google.code.gson:gson:2.10.1"
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
 }
 
 shadowJar {
-    archiveBaseName.set('GeminiCraft')
-    archiveClassifier.set('')
-    archiveVersion.set('1.2')
-    relocate 'okhttp3', 'dev.geminicraft.libs.okhttp3'
-    relocate 'okio', 'dev.geminicraft.libs.okio'
-    relocate 'com.google.gson', 'dev.geminicraft.libs.gson'
+    archiveClassifier.set("")
 }
 
-tasks.withType(JavaCompile) {
-    options.encoding = 'UTF-8'
+tasks.build {
+    dependsOn shadowJar
 }
